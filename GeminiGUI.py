@@ -307,9 +307,7 @@ class App:
             try:
                 import subprocess
                 
-                # 环境变量设置
                 env = os.environ.copy()
-                # 强制 playwright 安装到全局位置（可选）
                 env["PLAYWRIGHT_BROWSERS_PATH"] = "0" 
                 
                 if proxy_val:
@@ -317,36 +315,34 @@ class App:
                     env["HTTPS_PROXY"] = proxy_val
                     self.append_log(f"🔗 使用代理下载: {proxy_val}", "INFO")
 
-                # Windows 隐藏黑框配置
                 startupinfo = None
                 if sys.platform == 'win32':
                     startupinfo = subprocess.STARTUPINFO()
-                    # 修正：subprocess.STARTF_USESHOWWINDOW 直接在模块下，不在 STARTUPINFO 类中
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 
-                # 使用 -u 参数启用无缓冲输出
-                cmd = [sys.executable, "-u", "-m", "playwright", "install", "chromium"]
+                # 修改点：使用自定义参数 --install-deps 触发自启动逻辑
+                # 解决打包后 sys.executable 直接运行会弹出新 GUI 的问题
+                cmd = [sys.executable, "--install-deps"]
                 
                 process = subprocess.Popen(
                     cmd, 
                     stdout=subprocess.PIPE, 
                     stderr=subprocess.STDOUT, 
-                    text=True,
+                    text=True, 
                     env=env,
                     startupinfo=startupinfo,
                     encoding='utf-8', 
                     errors='replace',
-                    bufsize=1 # 行缓冲
+                    bufsize=1
                 )
                 
-                # 实时读取输出
                 while True:
                     line = process.stdout.readline()
                     if not line and process.poll() is not None:
                         break
                     if line:
                         line = line.strip()
-                        if line: # 忽略空行
+                        if line:
                             self.append_log(line, "INFO")
                 
                 if process.returncode == 0:
@@ -411,6 +407,13 @@ class App:
             self.root.after(0, lambda: self.start_btn.configure(state="normal"))
 
 if __name__ == "__main__":
+    # --- PyInstaller 多进程支持 (针对组件安装) ---
+    if len(sys.argv) > 1 and sys.argv[1] == "--install-deps":
+        # 如果检测到特殊标志，则运行 Playwright 安装逻辑而不是启动 GUI
+        sys.argv = ["playwright", "install", "chromium"]
+        playwright_main()
+        sys.exit(0)
+
     root = tk.Tk()
     app = App(root)
     root.mainloop()
