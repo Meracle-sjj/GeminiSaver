@@ -26,10 +26,10 @@ class GeminiArchiver:
         
         if proxy_server:
             self.proxy = {"server": proxy_server}
-            self.log(f"🌐 使用代理: {proxy_server}")
+            self.log(f"使用代理: {proxy_server}")
         else:
             self.proxy = None
-            self.log(f"🌐 代理未配置，使用直连模式")
+            self.log(f"代理未配置，使用直连模式")
 
     def log(self, message):
         if self.logger:
@@ -37,35 +37,35 @@ class GeminiArchiver:
         print(message) 
 
     def fetch_mhtml(self, url, output_mhtml_path):
-        self.log(f"Phase 1: 正在抓取网页快照...")
+        self.log(f"阶段 1: 正在抓取网页快照...")
         
         with sync_playwright() as p:
-            self.log("🚀 启动浏览器 (抓取模式)...")
+            self.log("正在启动浏览器 (抓取模式)...")
             browser = p.chromium.launch(headless=self.headless_fetch, proxy=self.proxy)
             context = browser.new_context()
             page = context.new_page()
             
             try:
-                self.log(f"🔗 加载页面: {url}")
+                self.log(f"正在加载页面: {url}")
                 page.goto(url, wait_until="domcontentloaded", timeout=120000)
                 
-                self.log("⏳ 页面骨架加载完毕，准备滚动...")
+                self.log("页面加载完毕，准备滚动...")
                 time.sleep(5)
 
-                self.log("📜 执行智能滚动 (约 30秒)...")
+                self.log("执行自动滚动加载 (约 30秒)...")
                 for i in range(30): 
                     page.mouse.wheel(0, 4000)
                     time.sleep(1)
                     if i % 5 == 0:
                         self.log(f"   ...进度 {i}/30")
                 
-                self.log("🔄 执行回马枪检查...")
+                self.log("执行双向滚动检查以确保内容完整...")
                 page.mouse.wheel(0, -5000)
                 time.sleep(2)
                 page.mouse.wheel(0, 5000)
                 time.sleep(3)
 
-                self.log("💾 捕获 MHTML 数据...")
+                self.log("正在保存 MHTML 数据...")
                 cdp = context.new_cdp_session(page)
                 result = cdp.send("Page.captureSnapshot", {"format": "mhtml"})
                 
@@ -74,7 +74,7 @@ class GeminiArchiver:
                     f.write(result["data"])
                 
                 browser.close()
-                self.log("✅ MHTML 保存成功！")
+                self.log("MHTML 保存成功！")
             except Exception as e:
                 browser.close()
                 raise e
@@ -82,21 +82,21 @@ class GeminiArchiver:
     def convert_to_pdf(self, mhtml_path, output_pdf_path):
         abs_path = os.path.abspath(mhtml_path)
         file_url = pathlib.Path(abs_path).as_uri()
-        self.log(f"Phase 2: 处理排版并生成 PDF...")
+        self.log(f"阶段 2: 处理排版并生成 PDF...")
         
         # 增加页脚选项 (如果需要保留页码等信息，可以在 page.pdf 中配置，这里主要处理页面元素)
         
         with sync_playwright() as p:
-            self.log("🚀 启动渲染引擎 (打印模式)...")
+            self.log("正在启动浏览器 (打印模式)...")
             browser = p.chromium.launch(headless=self.headless_print)
             page = browser.new_page()
             page.emulate_media(media="screen")
             
-            self.log("📂 加载本地 MHTML...")
+            self.log("正在加载本地 MHTML...")
             page.goto(file_url, wait_until="networkidle")
             time.sleep(3)
 
-            self.log("✂️ 执行外科手术 (去头 + 展开)...")
+            self.log("正在优化页面布局 (移除干扰元素)...")
             page.evaluate("""() => {
                 const style = document.createElement('style');
                 style.innerHTML = `
@@ -187,7 +187,7 @@ class GeminiArchiver:
             
             time.sleep(2)
 
-            self.log("🖨️ 正在生成 PDF...")
+            self.log("正在生成 PDF...")
             page.pdf(
                 path=output_pdf_path,
                 format="A4",
@@ -196,7 +196,7 @@ class GeminiArchiver:
                 scale=0.8
             )
             browser.close()
-            self.log("✅ PDF 生成成功！")
+            self.log("PDF 生成成功！")
 
 # ==========================================
 # GUI 界面类
@@ -260,7 +260,7 @@ class App:
         self.start_btn = ttk.Button(control_frame, text="开始运行", command=self.start_thread, width=20)
         self.start_btn.pack(side="left", padx=5)
 
-        self.install_btn = ttk.Button(control_frame, text="⚠️ 修复/安装依赖组件", command=self.install_browsers, width=20)
+        self.install_btn = ttk.Button(control_frame, text="修复/安装依赖组件", command=self.install_browsers, width=20)
         self.install_btn.pack(side="right", padx=5)
         
         self.check_dependencies()
@@ -292,10 +292,10 @@ class App:
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     browser.close()
-                self.root.after(0, lambda: self.install_btn.configure(state="disabled", text="✅ 组件已就绪"))
+                self.root.after(0, lambda: self.install_btn.configure(state="disabled", text="组件已就绪"))
             except Exception as e:
                 # 如果报错，说明浏览器没安装或找不到
-                self.root.after(0, lambda: self.install_btn.configure(state="normal", text="⚠️ 点击修复组件"))
+                self.root.after(0, lambda: self.install_btn.configure(state="normal", text="点击修复组件"))
         threading.Thread(target=_check, daemon=True).start()
 
     def install_browsers(self):
@@ -313,7 +313,7 @@ class App:
                 if proxy_val:
                     env["HTTP_PROXY"] = proxy_val
                     env["HTTPS_PROXY"] = proxy_val
-                    self.append_log(f"🔗 使用代理下载: {proxy_val}", "INFO")
+                    self.append_log(f"使用代理下载: {proxy_val}", "INFO")
 
                 startupinfo = None
                 if sys.platform == 'win32':
@@ -347,7 +347,7 @@ class App:
                 
                 if process.returncode == 0:
                     self.append_log("组件安装成功！", "SUCCESS")
-                    self.install_btn.configure(text="✅ 组件已就绪")
+                    self.install_btn.configure(text="组件已就绪")
                 else:
                     self.append_log(f"安装结束，返回码: {process.returncode}", "ERROR")
                     self.install_btn.configure(state="normal")
@@ -389,7 +389,7 @@ class App:
             archiver.fetch_mhtml(url, mhtml_path)
             archiver.convert_to_pdf(mhtml_path, pdf_path)
 
-            self.append_log("🎉 全部任务完成！", "SUCCESS")
+            self.append_log("全部任务完成！", "SUCCESS")
             messagebox.showinfo("成功", f"文件已保存至桌面:\n{pdf_path}")
             
             try:
@@ -401,7 +401,7 @@ class App:
                 pass
 
         except Exception as e:
-            self.append_log(f"❌ 发生错误: {str(e)}", "ERROR")
+            self.append_log(f"发生错误: {str(e)}", "ERROR")
             messagebox.showerror("运行出错", str(e))
         finally:
             self.root.after(0, lambda: self.start_btn.configure(state="normal"))
