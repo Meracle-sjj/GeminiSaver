@@ -65,16 +65,12 @@ class GeminiArchiver:
                 page.mouse.wheel(0, 5000)
                 time.sleep(3)
 
-                # 增加页面内容检查
-                title = page.title()
-                content_len = len(page.content())
-                self.log(f"📊 页面状态检查: 标题='{title}', 内容长度={content_len} bytes")
-
                 self.log("💾 捕获 MHTML 数据...")
                 cdp = context.new_cdp_session(page)
                 result = cdp.send("Page.captureSnapshot", {"format": "mhtml"})
                 
-                with open(output_mhtml_path, "w", encoding="utf-8") as f:
+                # Windows 上必须指定 newline=''，否则会出现 \r\r\n 导致 MHTML 损坏
+                with open(output_mhtml_path, "w", encoding="utf-8", newline="") as f:
                     f.write(result["data"])
                 
                 browser.close()
