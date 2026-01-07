@@ -83,7 +83,9 @@ class GeminiArchiver:
         abs_path = os.path.abspath(mhtml_path)
         file_url = pathlib.Path(abs_path).as_uri()
         self.log(f"Phase 2: 处理排版并生成 PDF...")
-
+        
+        # 增加页脚选项 (如果需要保留页码等信息，可以在 page.pdf 中配置，这里主要处理页面元素)
+        
         with sync_playwright() as p:
             self.log("🚀 启动渲染引擎 (打印模式)...")
             browser = p.chromium.launch(headless=self.headless_print)
@@ -105,17 +107,30 @@ class GeminiArchiver:
                 `;
                 document.head.appendChild(style);
 
-                const keywords = ["企业应用场景", "Gemini 应用", "试用 Gemini Advanced", "订阅"];
+                // 扩展关键词列表，精准打击底部遮挡元素
+                const keywords = [
+                    "企业应用场景", "Gemini 应用", "试用 Gemini Advanced", "订阅",
+                    "Google 隐私权政策", "Google 服务条款", "你的隐私权与 Gemini 应用",
+                    "隐私权政策", "服务条款" 
+                ];
                 keywords.forEach(text => {
                     const xpath = `//*[contains(text(), '${text}')]`;
                     const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
                     for (let i = 0; i < result.snapshotLength; i++) {
                         let element = result.snapshotItem(i);
+                        
+                        // 策略1：直接隐藏该文本节点所在的元素（如果是链接或按钮）
+                        if (element.tagName === 'A' || element.tagName === 'BUTTON') {
+                             element.style.display = 'none';
+                        }
+                        
+                        // 策略2：向上查找容器并隐藏（针对横幅/底部栏）
                         let parent = element.parentElement;
                         while (parent && parent !== document.body) {
                             const h = parent.offsetHeight;
                             const w = parent.offsetWidth;
-                            if (w > 500 && h > 0 && h < 150) {
+                            // 放宽高度限制到 200，防止稍微高一点的 footer 漏网
+                            if (w > 300 && h > 0 && h < 200) {
                                 parent.style.display = 'none';
                                 break;
                             }
@@ -129,11 +144,9 @@ class GeminiArchiver:
                     if (el.style.display === 'none') continue;
                     const computed = window.getComputedStyle(el);
                     if (computed.position === 'fixed' || computed.position === 'sticky') {
-                        if (parseInt(computed.top) < 100) {
-                            el.style.display = 'none'; 
-                        } else {
-                            el.style.position = 'absolute';
-                        }
+                        // 策略修改：只要是 fixed/sticky 元素，不管是头部还是底部，可能会遮挡内容，一律隐藏或强转
+                        // 尤其是底部的隐私声明、对话输入框等
+                        el.style.display = 'none'; 
                     }
                 }
 
