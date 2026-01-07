@@ -1,17 +1,27 @@
-name: Build All Platforms
+name: Build and Release
 
 on:
   push:
     branches: [ "main" ]
+    tags: 
+      - "v*" # 当推送 v1.0, v1.1 这种标签时触发发布流程
+
+permissions:
+  contents: write # 允许 Action 创建 Release
 
 jobs:
   build:
-    # 关键点：这里定义了一个“矩阵”，包含 Windows 和 Mac
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            asset_name: GeminiSaver-Windows.exe
+            exe_name: GeminiSaver.exe
+          - os: macos-latest
+            asset_name: GeminiSaver-MacOS
+            exe_name: GeminiSaver
 
-    runs-on: ${{ matrix.os }} # 让 GitHub 根据矩阵自动分配电脑
+    runs-on: ${{ matrix.os }}
 
     steps:
     - uses: actions/checkout@v4
@@ -29,12 +39,28 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        # 这里的命令 Win/Mac 通用
         pyinstaller --noconsole --onefile --name "GeminiSaver" GeminiGUI.py
+    
+    # 重命名构建产物，方便用户区分
+    - name: Rename Artifact (Windows)
+      if: matrix.os == 'windows-latest'
+      run: mv dist/${{ matrix.exe_name }} dist/${{ matrix.asset_name }}
 
+    - name: Rename Artifact (macOS)
+      if: matrix.os == 'macos-latest'
+      run: mv dist/${{ matrix.exe_name }} dist/${{ matrix.asset_name }}
+
+    # 1. 普通上传：在 Action 页面可见（有效期90天）
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        # 给产物起个不同的名字，区分是 Win 还是 Mac
-        name: GeminiSaver-${{ matrix.os }}
-        path: dist/GeminiSaver* # 注意：Mac 打包出来没有 .exe 后缀，用 * 通配符最省事
+        name: ${{ matrix.asset_name }}
+        path: dist/${{ matrix.asset_name }}
+
+    # 2. 正式发布：推 tag 时自动创建 GitHub Release 页
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: dist/${{ matrix.asset_name }}
+        generate_release_notes: true
