@@ -191,13 +191,20 @@ class GeminiArchiver:
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gemini 完美存档工具 v1.2")
+        self.root.title("Gemini 存档工具 v1.3 Win/Mac 适配 20250107")
         self.root.geometry("600x600")
         self.root.resizable(False, False)
 
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TButton", padding=6, relief="flat", background="#ccc")
+
+        # 字体适配 (解决 Windows 下中文字体显示不自然的问题)
+        self.hint_font = ("Arial", 10)
+        if sys.platform == "win32":
+            self.hint_font = ("Microsoft YaHei UI", 9)
+        elif sys.platform == "darwin":
+            self.hint_font = ("PingFang SC", 11)
 
         # --- 输入区 ---
         input_frame = ttk.LabelFrame(root, text=" 任务设置 ", padding=(10, 10))
@@ -227,11 +234,11 @@ class App:
             default_proxy = "http://127.0.0.1:10808"
         
         self.proxy_entry.insert(0, default_proxy)
-        ttk.Label(input_frame, text="*留空则直连。Mac常见7897，Win常见10808", font=("Arial", 8), foreground="gray").grid(row=3, column=1, sticky="w")
+        ttk.Label(input_frame, text="*留空则直连。Mac常见7897，Win常见10808", font=self.hint_font, foreground="gray").grid(row=3, column=1, sticky="w")
 
         # 保存位置
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        ttk.Label(input_frame, text=f"默认保存位置: {self.desktop_path}", font=("Arial", 8, "italic"), foreground="gray").grid(row=4, column=1, sticky="w", pady=(5,0))
+        ttk.Label(input_frame, text=f"默认保存位置: {self.desktop_path}", font=self.hint_font, foreground="gray").grid(row=4, column=1, sticky="w", pady=(5,0))
 
         # --- 控制区 ---
         control_frame = ttk.Frame(root)
@@ -279,28 +286,65 @@ class App:
         threading.Thread(target=_check, daemon=True).start()
 
     def install_browsers(self):
-        """修复逻辑：直接调用 Playwright 内部安装函数"""
+        proxy_val = self.proxy_entry.get().strip()
+
         def _install():
             self.install_btn.configure(state="disabled")
             self.append_log("正在下载浏览器内核 (约 150MB)，请耐心等待...", "INFO")
             try:
-                # --- 核心修改：直接在 Python 进程内调用安装 ---
-                # 这样可以避开 EXE 无法使用 -m 参数的问题
-                sys.argv = ["", "install", "chromium"]
-                try:
-                    playwright_main()
+                import subprocess
+                
+                # 环境变量设置
+                env = os.environ.copy()
+                # 强制 playwright 安装到全局位置（可选）
+                env["PLAYWRIGHT_BROWSERS_PATH"] = "0" 
+                
+                if proxy_val:
+                    env["HTTP_PROXY"] = proxy_val
+                    env["HTTPS_PROXY"] = proxy_val
+                    self.append_log(f"🔗 使用代理下载: {proxy_val}", "INFO")
+
+                # Windows 隐藏黑框配置
+                startupinfo = None
+                if sys.platform == 'win32':
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTUPINFO.DW_STARTF_USESHOWWINDOW
+                
+                # 使用 -u 参数启用无缓冲输出
+                cmd = [sys.executable, "-u", "-m", "playwright", "install", "chromium"]
+                
+                process = subprocess.Popen(
+                    cmd, 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.STDOUT, 
+                    text=True,
+                    env=env,
+                    startupinfo=startupinfo,
+                    encoding='utf-8', 
+                    errors='replace',
+                    bufsize=1 # 行缓冲
+                )
+                
+                # 实时读取输出
+                while True:
+                    line = process.stdout.readline()
+                    if not line and process.poll() is not None:
+                        break
+                    if line:
+                        line = line.strip()
+                        if line: # 忽略空行
+                            self.append_log(line, "INFO")
+                
+                if process.returncode == 0:
                     self.append_log("组件安装成功！", "SUCCESS")
                     self.install_btn.configure(text="✅ 组件已就绪")
-                except SystemExit as e:
-                    if e.code == 0:
-                        self.append_log("组件安装流程结束。", "SUCCESS")
-                        self.install_btn.configure(text="✅ 组件已就绪")
-                    else:
-                        self.append_log(f"组件安装异常退出，代码: {e.code}", "ERROR")
-                        self.install_btn.configure(state="normal")
+                else:
+                    self.append_log(f"安装结束，返回码: {process.returncode}", "ERROR")
+                    self.install_btn.configure(state="normal")
             except Exception as e:
                 self.append_log(f"安装出错: {str(e)}", "ERROR")
                 self.install_btn.configure(state="normal")
+        
         threading.Thread(target=_install, daemon=True).start()
 
     def start_thread(self):
