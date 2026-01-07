@@ -321,7 +321,8 @@ class App:
                 startupinfo = None
                 if sys.platform == 'win32':
                     startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTUPINFO.DW_STARTF_USESHOWWINDOW
+                    # 修正：subprocess.STARTF_USESHOWWINDOW 直接在模块下，不在 STARTUPINFO 类中
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 
                 # 使用 -u 参数启用无缓冲输出
                 cmd = [sys.executable, "-u", "-m", "playwright", "install", "chromium"]
