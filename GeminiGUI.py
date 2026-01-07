@@ -4,21 +4,25 @@ import time
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
+
+# --- 关键修复 1：强制 Playwright 查找系统全局路径 ---
+# 必须在导入 playwright 之前设置，否则无效
+# "0" 表示禁用局部查找，强制使用 %USERPROFILE%\AppData\Local\ms-playwright
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"
+
 from playwright.sync_api import sync_playwright
+# --- 关键修复 2：导入内部 main 函数用于安装 ---
+from playwright.__main__ import main as playwright_main
 
 # ==========================================
 # 核心逻辑类
 # ==========================================
 class GeminiArchiver:
     def __init__(self, logger_func, proxy_server=None, headless_fetch=False, headless_print=True):
-        """
-        :param proxy_server: 代理地址字符串 (例如 "http://127.0.0.1:7897")，None 则不使用
-        """
         self.logger = logger_func 
         self.headless_fetch = headless_fetch
         self.headless_print = headless_print
         
-        # 构造 playwright 需要的 proxy 字典格式
         if proxy_server:
             self.proxy = {"server": proxy_server}
             self.log(f"🌐 使用代理: {proxy_server}")
@@ -36,7 +40,6 @@ class GeminiArchiver:
         
         with sync_playwright() as p:
             self.log("🚀 启动浏览器 (抓取模式)...")
-            # 关键修改：传入 self.proxy
             browser = p.chromium.launch(headless=self.headless_fetch, proxy=self.proxy)
             context = browser.new_context()
             page = context.new_page()
@@ -81,7 +84,6 @@ class GeminiArchiver:
 
         with sync_playwright() as p:
             self.log("🚀 启动渲染引擎 (打印模式)...")
-            # 打印阶段不需要代理，因为是加载本地文件
             browser = p.chromium.launch(headless=self.headless_print)
             page = browser.new_page()
             page.emulate_media(media="screen")
@@ -187,51 +189,49 @@ class GeminiArchiver:
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gemini 完美存档工具 v1.1")
-        self.root.geometry("600x600") # 稍微拉高一点以容纳新选项
+        self.root.title("Gemini 完美存档工具 v1.2")
+        self.root.geometry("600x600")
         self.root.resizable(False, False)
 
-        # 样式设置
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TButton", padding=6, relief="flat", background="#ccc")
 
-        # --- 第一部分：输入区 ---
+        # --- 输入区 ---
         input_frame = ttk.LabelFrame(root, text=" 任务设置 ", padding=(10, 10))
         input_frame.pack(fill="x", padx=15, pady=10)
 
-        # 1. 链接输入
+        # 链接
         ttk.Label(input_frame, text="Gemini 分享链接:").grid(row=0, column=0, sticky="w", pady=5)
         self.url_entry = ttk.Entry(input_frame, width=50)
         self.url_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         self.url_entry.insert(0, "https://gemini.google.com/share/...")
 
-        # 2. 文件名输入
+        # 文件名
         ttk.Label(input_frame, text="保存文件名 (不带后缀):").grid(row=1, column=0, sticky="w", pady=5)
         self.filename_entry = ttk.Entry(input_frame, width=50)
         self.filename_entry.grid(row=1, column=1, sticky="ew", padx=5, pady=5)
         self.filename_entry.insert(0, "My_Conversation")
 
-        # 3. 代理设置 (新增功能)
+        # 代理
         ttk.Label(input_frame, text="代理地址 (可选):").grid(row=2, column=0, sticky="w", pady=5)
         self.proxy_entry = ttk.Entry(input_frame, width=50)
         self.proxy_entry.grid(row=2, column=1, sticky="ew", padx=5, pady=5)
         
-        # 智能判断默认代理
         default_proxy = ""
-        if sys.platform == 'darwin': # macOS
-            default_proxy = "http://127.0.0.1:7897" # Clash 默认
-        elif sys.platform == 'win32': # Windows
-            default_proxy = "http://127.0.0.1:10808" # v2rayN 默认
+        if sys.platform == 'darwin': 
+            default_proxy = "http://127.0.0.1:7897"
+        elif sys.platform == 'win32':
+            default_proxy = "http://127.0.0.1:10808"
         
         self.proxy_entry.insert(0, default_proxy)
         ttk.Label(input_frame, text="*留空则直连。Mac常见7897，Win常见10808", font=("Arial", 8), foreground="gray").grid(row=3, column=1, sticky="w")
 
-        # 默认位置提示
+        # 保存位置
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         ttk.Label(input_frame, text=f"默认保存位置: {self.desktop_path}", font=("Arial", 8, "italic"), foreground="gray").grid(row=4, column=1, sticky="w", pady=(5,0))
 
-        # --- 第二部分：控制区 ---
+        # --- 控制区 ---
         control_frame = ttk.Frame(root)
         control_frame.pack(fill="x", padx=15, pady=5)
 
@@ -243,7 +243,7 @@ class App:
         
         self.check_dependencies()
 
-        # --- 第三部分：日志区 ---
+        # --- 日志区 ---
         log_frame = ttk.LabelFrame(root, text=" 运行日志 ", padding=(10, 10))
         log_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
@@ -266,35 +266,36 @@ class App:
     def check_dependencies(self):
         def _check():
             try:
-                from playwright.sync_api import sync_playwright
+                # 尝试简单调用一下，如果找不到浏览器会报错
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=True)
                     browser.close()
                 self.root.after(0, lambda: self.install_btn.configure(state="disabled", text="✅ 组件已就绪"))
             except Exception as e:
-                self.append_log(f"检测到组件缺失，请点击“修复依赖组件”。", "ERROR")
+                # 如果报错，说明浏览器没安装或找不到
                 self.root.after(0, lambda: self.install_btn.configure(state="normal", text="⚠️ 点击修复组件"))
         threading.Thread(target=_check, daemon=True).start()
 
     def install_browsers(self):
+        """修复逻辑：直接调用 Playwright 内部安装函数"""
         def _install():
             self.install_btn.configure(state="disabled")
             self.append_log("正在下载浏览器内核 (约 150MB)，请耐心等待...", "INFO")
             try:
-                import subprocess
-                # 针对不同系统的打包环境，playwright 命令可能找不到，改用 python -m playwright
-                cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                for line in process.stdout:
-                    self.append_log(line.strip(), "INFO")
-                process.wait()
-                
-                if process.returncode == 0:
+                # --- 核心修改：直接在 Python 进程内调用安装 ---
+                # 这样可以避开 EXE 无法使用 -m 参数的问题
+                sys.argv = ["", "install", "chromium"]
+                try:
+                    playwright_main()
                     self.append_log("组件安装成功！", "SUCCESS")
                     self.install_btn.configure(text="✅ 组件已就绪")
-                else:
-                    self.append_log("组件安装失败，请检查网络或使用 pip 手动安装。", "ERROR")
-                    self.install_btn.configure(state="normal")
+                except SystemExit as e:
+                    if e.code == 0:
+                        self.append_log("组件安装流程结束。", "SUCCESS")
+                        self.install_btn.configure(text="✅ 组件已就绪")
+                    else:
+                        self.append_log(f"组件安装异常退出，代码: {e.code}", "ERROR")
+                        self.install_btn.configure(state="normal")
             except Exception as e:
                 self.append_log(f"安装出错: {str(e)}", "ERROR")
                 self.install_btn.configure(state="normal")
@@ -313,7 +314,6 @@ class App:
             messagebox.showerror("错误", "请输入文件名")
             return
             
-        # 代理处理：如果用户留空，则传 None
         if not proxy_val:
             proxy_val = None
 
@@ -325,7 +325,6 @@ class App:
             mhtml_path = os.path.join(self.desktop_path, f"{filename}.mhtml")
             pdf_path = os.path.join(self.desktop_path, f"{filename}.pdf")
 
-            # 实例化工具，传入代理
             archiver = GeminiArchiver(
                 logger_func=lambda msg: self.append_log(msg, "INFO"),
                 proxy_server=proxy_val
