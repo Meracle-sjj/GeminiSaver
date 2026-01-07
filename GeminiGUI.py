@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import threading
+import pathlib
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 
@@ -64,6 +65,11 @@ class GeminiArchiver:
                 page.mouse.wheel(0, 5000)
                 time.sleep(3)
 
+                # 增加页面内容检查
+                title = page.title()
+                content_len = len(page.content())
+                self.log(f"📊 页面状态检查: 标题='{title}', 内容长度={content_len} bytes")
+
                 self.log("💾 捕获 MHTML 数据...")
                 cdp = context.new_cdp_session(page)
                 result = cdp.send("Page.captureSnapshot", {"format": "mhtml"})
@@ -79,7 +85,7 @@ class GeminiArchiver:
 
     def convert_to_pdf(self, mhtml_path, output_pdf_path):
         abs_path = os.path.abspath(mhtml_path)
-        file_url = f"file://{abs_path}"
+        file_url = pathlib.Path(abs_path).as_uri()
         self.log(f"Phase 2: 处理排版并生成 PDF...")
 
         with sync_playwright() as p:
