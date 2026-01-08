@@ -36,7 +36,7 @@ class GeminiArchiver:
             self.logger(message)
         print(message) 
 
-    def fetch_mhtml(self, url, output_mhtml_path):
+    def fetch_mhtml(self, url, output_mhtml_path, scroll_count=30):
         self.log(f"阶段 1: 正在抓取网页快照...")
         
         with sync_playwright() as p:
@@ -52,12 +52,12 @@ class GeminiArchiver:
                 self.log("页面加载完毕，准备滚动...")
                 time.sleep(5)
 
-                self.log("执行自动滚动加载 (约 30秒)...")
-                for i in range(30): 
+                self.log(f"执行自动滚动加载 (约 {scroll_count}次)...")
+                for i in range(scroll_count): 
                     page.mouse.wheel(0, 4000)
                     time.sleep(1)
                     if i % 5 == 0:
-                        self.log(f"   ...进度 {i}/30")
+                        self.log(f"   ...进度 {i}/{scroll_count}")
                 
                 self.log("执行双向滚动检查以确保内容完整...")
                 page.mouse.wheel(0, -5000)
@@ -249,9 +249,15 @@ class App:
         self.proxy_entry.insert(0, default_proxy)
         ttk.Label(input_frame, text="*留空则直连。Mac常见7897，Win常见10808", font=self.hint_font, foreground="gray").grid(row=3, column=1, sticky="w")
 
+        # 滚动次数
+        ttk.Label(input_frame, text="滚动次数 (默认20):").grid(row=4, column=0, sticky="w", pady=5)
+        self.scroll_entry = ttk.Entry(input_frame, width=50)
+        self.scroll_entry.grid(row=4, column=1, sticky="ew", padx=5, pady=5)
+        self.scroll_entry.insert(0, "20")
+
         # 保存位置
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        ttk.Label(input_frame, text=f"默认保存位置: {self.desktop_path}", font=self.hint_font, foreground="gray").grid(row=4, column=1, sticky="w", pady=(5,0))
+        ttk.Label(input_frame, text=f"默认保存位置: {self.desktop_path}", font=self.hint_font, foreground="gray").grid(row=5, column=1, sticky="w", pady=(5,0))
 
         # --- 控制区 ---
         control_frame = ttk.Frame(root)
@@ -263,8 +269,6 @@ class App:
         self.install_btn = ttk.Button(control_frame, text="修复/安装依赖组件", command=self.install_browsers, width=20)
         self.install_btn.pack(side="right", padx=5)
         
-        self.check_dependencies()
-
         # --- 日志区 ---
         log_frame = ttk.LabelFrame(root, text=" 运行日志 ", padding=(10, 10))
         log_frame.pack(fill="both", expand=True, padx=15, pady=10)
@@ -276,6 +280,9 @@ class App:
         self.log_area.tag_config("ERROR", foreground="red")
 
         self.append_log("欢迎使用！请确认代理设置后点击“开始运行”。", "INFO")
+        
+        # 移到底部，确保日志区域已初始化，以便记录检测错误
+        self.check_dependencies()
 
     def append_log(self, text, level="INFO"):
         def _update():
@@ -286,6 +293,7 @@ class App:
         self.root.after(0, _update)
 
     def check_dependencies(self):
+        self.install_btn.configure(state="disabled", text="正在检测组件...")
         def _check():
             try:
                 # 尝试简单调用一下，如果找不到浏览器会报错
@@ -293,9 +301,14 @@ class App:
                     browser = p.chromium.launch(headless=True)
                     browser.close()
                 self.root.after(0, lambda: self.install_btn.configure(state="disabled", text="组件已就绪"))
+                self.append_log("组件完整性检测通过。", "SUCCESS")
             except Exception as e:
                 # 如果报错，说明浏览器没安装或找不到
                 self.root.after(0, lambda: self.install_btn.configure(state="normal", text="点击修复组件"))
+                error_msg = str(e)
+                # 忽略一些非致命的日志噪音
+                if "Target.detachFromTarget" not in error_msg: 
+                     self.append_log(f"组件检测未通过: {error_msg}", "ERROR")
         threading.Thread(target=_check, daemon=True).start()
 
     def install_browsers(self):
@@ -361,6 +374,12 @@ class App:
         url = self.url_entry.get().strip()
         filename = self.filename_entry.get().strip()
         proxy_val = self.proxy_entry.get().strip()
+        
+        try:
+            scroll_val = self.scroll_entry.get().strip()
+            scroll_count = int(scroll_val) if scroll_val else 20
+        except ValueError:
+            scroll_count = 20
 
         if not url.startswith("http"):
             messagebox.showerror("错误", "请输入有效的 Gemini 分享链接")
@@ -374,9 +393,9 @@ class App:
             proxy_val = None
 
         self.start_btn.configure(state="disabled")
-        threading.Thread(target=self.run_task, args=(url, filename, proxy_val), daemon=True).start()
+        threading.Thread(target=self.run_task, args=(url, filename, proxy_val, scroll_count), daemon=True).start()
 
-    def run_task(self, url, filename, proxy_val):
+    def run_task(self, url, filename, proxy_val, scroll_count):
         try:
             mhtml_path = os.path.join(self.desktop_path, f"{filename}.mhtml")
             pdf_path = os.path.join(self.desktop_path, f"{filename}.pdf")
@@ -386,7 +405,7 @@ class App:
                 proxy_server=proxy_val
             )
             
-            archiver.fetch_mhtml(url, mhtml_path)
+            archiver.fetch_mhtml(url, mhtml_path, scroll_count=scroll_count)
             archiver.convert_to_pdf(mhtml_path, pdf_path)
 
             self.append_log("全部任务完成！", "SUCCESS")
