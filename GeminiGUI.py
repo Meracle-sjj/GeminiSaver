@@ -6,10 +6,19 @@ import pathlib
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 
-# --- 关键修复 1：强制 Playwright 查找系统全局路径 ---
-# 必须在导入 playwright 之前设置，否则无效
-# "0" 表示禁用局部查找，强制使用 %USERPROFILE%\AppData\Local\ms-playwright
-os.environ["PLAYWRIGHT_BROWSERS_PATH"] = "0"
+# --- 关键修复 1：强制使用持久化路径 ---
+# 必须在导入 playwright 之前设置，否则 PyInstaller 打包应用会在临时目录查找
+if sys.platform == "darwin":
+    # macOS: 显式指定 ~/Library/Caches/ms-playwright，避免打包后路径漂移
+    _playwright_path = os.path.join(os.path.expanduser("~"), "Library", "Caches", "ms-playwright")
+elif sys.platform == "win32":
+    # Windows: 显式指定 %LOCALAPPDATA%\ms-playwright
+    _playwright_path = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "ms-playwright")
+else:
+    # Linux: ~/.cache/ms-playwright
+    _playwright_path = os.path.join(os.path.expanduser("~"), ".cache", "ms-playwright")
+
+os.environ["PLAYWRIGHT_BROWSERS_PATH"] = _playwright_path
 
 from playwright.sync_api import sync_playwright
 # --- 关键修复 2：导入内部 main 函数用于安装 ---
@@ -321,7 +330,7 @@ class App:
                 import subprocess
                 
                 env = os.environ.copy()
-                env["PLAYWRIGHT_BROWSERS_PATH"] = "0" 
+                # 继承全局设置的 PLAYWRIGHT_BROWSERS_PATH，不要重置为 "0"
                 
                 if proxy_val:
                     env["HTTP_PROXY"] = proxy_val
@@ -335,7 +344,10 @@ class App:
                 
                 # 修改点：使用自定义参数 --install-deps 触发自启动逻辑
                 # 解决打包后 sys.executable 直接运行会弹出新 GUI 的问题
-                cmd = [sys.executable, "--install-deps"]
+                if getattr(sys, 'frozen', False):
+                    cmd = [sys.executable, "--install-deps"]
+                else:
+                    cmd = [sys.executable, sys.argv[0], "--install-deps"]
                 
                 process = subprocess.Popen(
                     cmd, 
