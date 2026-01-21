@@ -43,26 +43,36 @@ jobs:
       run: |
         pyinstaller --noconsole --onefile --name "GeminiSaver" GeminiGUI.py
     
-    # 重命名构建产物，方便用户区分
-    - name: Rename Artifact (Windows)
-      if: matrix.os == 'windows-latest'
-      run: mv dist/${{ matrix.exe_name }} dist/${{ matrix.asset_name }}
+    # 计算带有版本号的最终文件名
+    - name: Define Asset Name
+      id: cur_version
+      shell: bash
+      run: |
+        VERSION="${{ github.ref_name }}"
+        # 替换可能存在的非法字符(如斜杠)
+        SAFE_VERSION=${VERSION//\//-}
+        
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          echo "name=GeminiSaver-${SAFE_VERSION}-Windows.exe" >> $GITHUB_OUTPUT
+        else
+          echo "name=GeminiSaver-${SAFE_VERSION}-MacOS" >> $GITHUB_OUTPUT
+        fi
 
-    - name: Rename Artifact (macOS)
-      if: matrix.os == 'macos-latest'
-      run: mv dist/${{ matrix.exe_name }} dist/${{ matrix.asset_name }}
+    # 重命名构建产物
+    - name: Rename Artifact
+      run: mv dist/${{ matrix.exe_name }} dist/${{ steps.cur_version.outputs.name }}
 
     # 1. 普通上传：在 Action 页面可见（有效期90天）
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.asset_name }}
-        path: dist/${{ matrix.asset_name }}
+        name: ${{ steps.cur_version.outputs.name }}
+        path: dist/${{ steps.cur_version.outputs.name }}
 
     # 2. 正式发布：推 tag 时自动创建 GitHub Release 页
     - name: Release
       uses: softprops/action-gh-release@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: dist/${{ matrix.asset_name }}
+        files: dist/${{ steps.cur_version.outputs.name }}
         generate_release_notes: true

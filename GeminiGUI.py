@@ -213,7 +213,7 @@ class GeminiArchiver:
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Gemini 存档工具 v1.0.1 Win/Mac 适配 20260108")
+        self.root.title("Gemini 存档工具 v1.0.2 Win/Mac 适配 20260121")
         self.root.geometry("600x600")
         self.root.resizable(False, False)
 
